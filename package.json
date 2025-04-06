@@ -1,6 +1,6 @@
 {
   "name": "easy-spring",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A simple spring animation utility library",
   "main": "index.js",
   "scripts": {
@@ -8,9 +8,9 @@
   },
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/iyinchao/easy-spring.git"
   },
-  "author": "",
+  "author": "iyinhao <yincharles@163.com>",
   "license": "MIT",
   "dependencies": {}
 }
