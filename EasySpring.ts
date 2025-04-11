@@ -19,7 +19,7 @@ export type SpringController = {
     readonly current: number;
     readonly goal: number;
     readonly config: SpringConfig;
-    start: (value: number) => void;
+    start: (value: number, config?: SpringConfig) => void;
     set: (value: number) => void;
     pause: () => void;
     remove: () => void;
@@ -31,6 +31,7 @@ type SpringInfo = {
         current: number;
         v: number;
         running: boolean;
+        startConfig?: Required<SpringConfig>;
     };
     config: Required<SpringConfig>;
 };
@@ -44,7 +45,7 @@ const springDefaultConfig: Required<SpringConfig> = {
     clamp: false,
 };
 
-const frameResolution = (1000 / 60) / 30;
+const frameResolution = 1000 / 60 / 100;
 
 const generateId = (existingKeys: string[]) => {
     let key = '';
@@ -70,7 +71,6 @@ export const EasySpring = {
     },
     startAnimationFrame() {
         if (this.info.raf) {
-            console.log('returned');
             return;
         }
 
@@ -84,7 +84,7 @@ export const EasySpring = {
             let deltaT = t - this.info.lastT;
             this.info.lastT = t;
 
-            // detect a super long frame
+            // detect a abnormal super long frame (system lagging or debug pause)
             // discard and restart
             if (deltaT > 100) {
                 this.info.lastT = -1;
@@ -93,10 +93,11 @@ export const EasySpring = {
 
             const hPFrameFactor = Math.round(deltaT / frameResolution);
 
-            for (let i = 1; i <= hPFrameFactor; i++) {
-                const deltaTH = deltaT / hPFrameFactor;
+            this.springs.forEach(({ option, info, controller }) => {
+                const config = info.runtime.startConfig ?? info.config;
+                for (let i = 1; i <= hPFrameFactor; i++) {
+                    const deltaTH = deltaT / hPFrameFactor;
 
-                this.springs.forEach(({ option, info, controller }) => {
                     const offset = info.runtime.goal - info.runtime.current;
 
                     // check rest
@@ -109,8 +110,8 @@ export const EasySpring = {
                         }
                         return;
                     } else if (
-                        Math.abs(offset) < info.config.precision &&
-                        Math.abs(info.runtime.v) < info.config.precision
+                        Math.abs(offset) < config.precision &&
+                        Math.abs(info.runtime.v) < config.precision
                     ) {
                         info.runtime.v = 0;
                         info.runtime.current = info.runtime.goal;
@@ -120,28 +121,25 @@ export const EasySpring = {
                         this.checkIdle();
                         return;
                     }
+                    // TODO: support clamp
 
-                    // info.runtime.currentV
-                    const f = info.config.tension * offset;
-                    const a = (f - info.config.friction * info.runtime.v) / info.config.mass;
+                    const f = config.tension * offset;
+                    const a = (f - config.friction * info.runtime.v) / config.mass;
                     const deltaV = (a * deltaTH) / 1000;
                     info.runtime.v += deltaV;
                     const deltaD = (info.runtime.v * deltaTH) / 1000;
                     info.runtime.current += deltaD;
 
                     info.runtime.running = true;
-                    option.onChange?.(controller);
-                });
-            }
-            // console.log('raf', this.info.raf);
+                }
+
+                option.onChange?.(controller);
+            });
         };
-        console.log('start frame');
         this.info.raf = requestAnimationFrame(onFrame);
-        // console.log('raf', this.info.raf);
     },
     stopAnimationFrame() {
         if (this.info.raf !== null) {
-            console.log(this.info.raf);
             // debugger
             cancelAnimationFrame(this.info.raf);
             this.info.raf = null;
@@ -151,11 +149,10 @@ export const EasySpring = {
     checkIdle() {
         let hasRunning = false;
         this.springs.forEach((v) => {
-            hasRunning = hasRunning || v.info.runtime.running
+            hasRunning = hasRunning || v.info.runtime.running;
         });
 
         if (!hasRunning) {
-            console.log('idle');
             this.stopAnimationFrame();
         }
     },
@@ -187,12 +184,15 @@ export const EasySpring = {
             get config() {
                 return { ...info.config };
             },
-            start(value) {
+            start(value, config) {
                 info.runtime.goal = value;
                 info.runtime.running = true;
+                info.runtime.startConfig = { ...springDefaultConfig, ...this.config, ...config };
+                info.runtime.v = info.runtime.startConfig.velocity ?? 0;
                 option.onStart?.(this);
                 rootThis.startAnimationFrame.call(rootThis);
             },
+            // TODO: support pause
             pause() { },
             set(value) {
                 let hasChanged = value !== info.runtime.current;
